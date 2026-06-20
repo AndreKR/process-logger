@@ -1,0 +1,79 @@
+name: CI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+env:
+  CARGO_TERM_COLOR: always
+  TARGET: x86_64-pc-windows-gnu
+
+jobs:
+  build:
+    name: Cross-build Windows exe (Linux runner)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-gnu
+
+      - name: Cache cargo registry and build
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install build dependencies
+        run: sudo apt-get update && sudo apt-get install -y mingw-w64
+
+      - name: Install test dependencies (Wine)
+        run: |
+          sudo dpkg --add-architecture i386
+          sudo apt-get update
+          sudo apt-get install -y wine wine64
+      - name: Run tests under Wine
+        env:
+          # Wine 9+ (on current ubuntu-latest) uses a unified `wine` loader;
+          # the separate `wine64` command no longer exists.
+          CARGO_TARGET_X86_64_PC_WINDOWS_GNU_RUNNER: wine
+          WINEDEBUG: -all
+        run: cargo test --release --target "$TARGET" --verbose
+
+      - name: Build release executable
+        run: cargo build --release --target "$TARGET" --verbose
+
+      - name: Upload executable artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: process-logger
+          path: target/x86_64-pc-windows-gnu/release/process-logger.exe
+          if-no-files-found: error
+
+  release:
+    name: Update rolling "latest" release
+    needs: build
+    # Only publish from pushes to main, never from pull requests.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download built executable
+        uses: actions/download-artifact@v4
+        with:
+          name: process-logger
+
+      - name: Publish/update "latest" release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: Latest build
+          prerelease: true
+          # Moves the `latest` tag to this commit and replaces the asset.
+          files: process-logger.exe
+          fail_on_unmatched_files: true
+          body: |
+            Automatically built from the latest commit on `main`.
+            Download `process-logger.exe` below. Run it elevated (it requests UAC).

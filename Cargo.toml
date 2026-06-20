@@ -1,0 +1,18 @@
+[package]
+name = "process-logger"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+ferrisetw = "1.2.0"
+ctrlc = "3.4"
+
+[build-dependencies]
+embed-manifest = "1.4"
+
+# The binary embeds a requireAdministrator manifest, so its (empty) unit-test
+# harness can't launch without elevation. Tests live in the library instead.
+[[bin]]
+name = "process-logger"
+path = "src/main.rs"
+test = false
